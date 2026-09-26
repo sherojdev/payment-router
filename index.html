@@ -18,8 +18,8 @@
         - router.js is whitelisted by its exact SHA-256 hash (SRI).
         - QRCode CDN is whitelisted by domain; its bytes are verified by the
           integrity= attribute on the <script> tag below.
-        - frame-ancestors is declared here for completeness but only enforced
-          via the HTTP header in _headers (see that file).
+        - frame-ancestors is enforced by the HTTP header in _headers because
+          browsers ignore it in a meta-delivered policy.
     -->
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none';
@@ -27,8 +27,7 @@
                                https://cdnjs.cloudflare.com;
                    style-src 'unsafe-inline';
                    img-src 'self' data:;
-                   connect-src 'none';
-                   frame-ancestors 'none';">
+                   connect-src 'none';">
 
     <!--
         QRCode library loaded from a trusted CDN.
