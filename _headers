@@ -9,7 +9,7 @@
 /*
   # Prevent this page from being embedded in iframes (clickjacking protection)
   # frame-ancestors in <meta> CSP is ignored by browsers — HTTP header is required.
-  Content-Security-Policy: default-src 'none'; script-src 'sha256-6drkf7TkA3g2Wb4h0L6lYHECySbzI+xyJ7C4d0JR9ys=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-ancestors 'none';
+  Content-Security-Policy: default-src 'none'; script-src 'sha256-t0+18TJSxSiuPv655v+nwOwixkgm89AZFlJ8QM47glU=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-ancestors 'none';
 
   # Legacy clickjacking header for browsers that don't support CSP frame-ancestors
   X-Frame-Options: DENY

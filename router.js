@@ -1,11 +1,12 @@
-window.onload = function () {
+async function routePayment() {
 
     // =========================================================
     // ALLOWLISTS — edit these to match your actual gateway URLs
     // Tightened to exact hostnames only (no wildcard subdomains)
     // =========================================================
     const trustedDomains = [
-        'payments.cashfree.com'
+        'payments.cashfree.com',
+        'payments-test.cashfree.com'
         // Add exact hostnames as needed: 'api.razorpay.com', 'checkout.stripe.com'
     ];
 
@@ -99,6 +100,27 @@ window.onload = function () {
             redirectingState.classList.add('hidden');
             desktopState.classList.remove('hidden');
 
+            const qrScript = document.getElementById('qrcode-library');
+            if (typeof QRCode === 'undefined' && qrScript) {
+                // The QR library loads asynchronously; don't hold routing until
+                // every page resource finishes loading.
+                await new Promise(resolve => {
+                    const timeout = setTimeout(resolve, 10000);
+                    qrScript.addEventListener('load', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    }, { once: true });
+                    qrScript.addEventListener('error', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    }, { once: true });
+                    if (typeof QRCode !== 'undefined') {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                });
+            }
+
             if (typeof QRCode === 'undefined') {
                 showError("QR library failed to load. Please refresh and try again.");
                 return;
@@ -141,4 +163,10 @@ window.onload = function () {
     } catch (e) {
         showError("The payment link could not be parsed. Please check the URL.");
     }
-};
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', routePayment, { once: true });
+} else {
+    routePayment();
+}

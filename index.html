@@ -23,7 +23,7 @@
     -->
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none';
-                   script-src 'sha256-FOqQWV/Z90jVz7svMmKSKuWY9iiKTIQy6fvRRe1uDu0='
+                   script-src 'sha256-t0+18TJSxSiuPv655v+nwOwixkgm89AZFlJ8QM47glU='
                                https://cdnjs.cloudflare.com;
                    style-src 'unsafe-inline';
                    img-src 'self' data:;
@@ -35,7 +35,7 @@
         The integrity= hash is verified by the browser before execution.
         If the CDN serves different bytes (tampered/compromised), it is refused.
     -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+    <script id="qrcode-library" async src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
             integrity="sha256-xUHvBjJ4hahBW8qN9gceFBibSFUzbe9PNttUvehITzY="
             crossorigin="anonymous"></script>
 
@@ -44,7 +44,7 @@
         Keeping JS external allows CSP to whitelist it by hash without unsafe-inline.
     -->
     <script src="./router.js"
-            integrity="sha256-6drkf7TkA3g2Wb4h0L6lYHECySbzI+xyJ7C4d0JR9ys="
+            integrity="sha256-t0+18TJSxSiuPv655v+nwOwixkgm89AZFlJ8QM47glU="
             crossorigin="anonymous"></script>
 
     <style>
