@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Payment...</title>
+    <!-- Include QR Code Library safely via CDN -->
+    <script src="https://cloudflare.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            text-align: center;
+            max-width: 360px;
+            width: 100%;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0070f3;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        #qrcode {
+            margin: 20px auto;
+            padding: 10px;
+            background: white;
+            display: inline-block;
+            border: 1px solid #eaeaea;
+            border-radius: 8px;
+        }
+        .hidden { display: none !important; }
+        .error { color: #dc2626; font-weight: 500; }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- State 1: Connecting / Redirecting (Mobile or Gateway Redirect) -->
+    <div id="redirecting-state">
+        <div class="loader"></div>
+        <h3>Connecting to Gateway...</h3>
+        <p>Please wait while we route you securely to finish your payment.</p>
+    </div>
+
+    <!-- State 2: Desktop UPI Fallback (QR Code Shown) -->
+    <div id="desktop-state" class="hidden">
+        <h3>Scan to Pay</h3>
+        <p>Open any UPI app (GPay, PhonePe, Paytm) and scan the QR code below to complete payment.</p>
+        <div id="qrcode"></div>
+    </div>
+
+    <!-- State 3: Errors / Blocks -->
+    <div id="error-state" class="hidden">
+        <h3 class="error">Security Alert</h3>
+        <p id="error-message">This redirect cannot be processed safely.</p>
+    </div>
+</div>
+
+<script>
+window.onload = function() {
+    // 1. Trusted Web Domains (Stripe, Cashfree, etc.)
+    const trustedDomains = [
+        'cashfree.com',
+        '://cashfree.com',
+        '://cashfree.com'
+    ];
+
+    // 2. Trusted Merchant UPI VPAs (Virtual Payment Addresses)
+    const trustedVPAs = [
+        'yourbusiness@hdfc',
+        'mymerchant@okaxis',
+        'testmerchant@ybl'
+    ];
+
+    // ==========================================
+    // ROUTING ENGINE CORING LOGIC
+    // ==========================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetUrl = urlParams.get('paymentLink');
+
+    const redirectingState = document.getElementById('redirecting-state');
+    const desktopState = document.getElementById('desktop-state');
+    const errorState = document.getElementById('error-state');
+    const errorMessage = document.getElementById('error-message');
+
+    if (!targetUrl) {
+        showError("Missing query parameter. Please pass a valid link.");
+        return;
+    }
+
+    try {
+        const parsedUrl = new URL(targetUrl);
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+        // --- INTERCEPT ROUTE 1: UPI NATIVE PROTOCOL ---
+        if (parsedUrl.protocol === 'upi:') {
+            const upiParams = new URLSearchParams(parsedUrl.search);
+            const payeeAddress = upiParams.get('pa');
+
+            // Strictly cross-examine incoming VPA identity
+            if (!payeeAddress) {
+                showError("Unauthorized UPI recipient address. This transaction has been blocked.");
+                return;
+            }
+
+            if (isMobile) {
+                // Instantly handshake with local mobile phone app registry
+                window.location.href = targetUrl;
+            } else {
+                // Desktop client fallback: Project clean QR asset
+                redirectingState.classList.add('hidden');
+                desktopState.classList.remove('hidden');
+
+                new QRCode(document.getElementById("qrcode"), {
+                    text: targetUrl,
+                    width: 200,
+                    height: 200,
+                    correctLevel : QRCode.CorrectLevel.M
+                });
+            }
+        } 
+        
+        // --- INTERCEPT ROUTE 2: STANDARD CLOUD GATEWAYS (HTTPS) ---
+        else if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+            const hostname = parsedUrl.hostname.toLowerCase();
+
+            // Interrogate true domain endpoints 
+            const isDomainTrusted = trustedDomains.some(domain => 
+                hostname === domain || hostname.endsWith('.' + domain)
+            );
+
+            if (!isDomainTrusted) {
+                showError("Unauthorized payment gateway domain. Redirection blocked.");
+                return;
+            }
+
+            // Web gateways natively adjust seamlessly across all mobile/desktop layouts
+            window.location.href = targetUrl;
+        } 
+        
+        // --- INTERCEPT ROUTE 3: INVALID/REJECTED SCHEMES ---
+        else {
+            showError("Unsupported application payment schema.");
+        }
+
+    } catch (e) {
+        showError("The system could not parse the execution link structure securely.");
+    }
+
+    function showError(msg) {
+        redirectingState.classList.add('hidden');
+        desktopState.classList.add('hidden');
+        errorState.classList.remove('hidden');
+        errorMessage.innerText = msg;
+    }
+};
+</script>
+
+</body>
+</html>
