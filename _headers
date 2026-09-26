@@ -1,0 +1,27 @@
+# HTTP security headers for Netlify / Cloudflare Pages
+# These activate protections that <meta> tags cannot provide,
+# most importantly frame-ancestors (clickjacking) and HSTS.
+#
+# For Vercel: add these to vercel.json under "headers"
+# For Apache: add to .htaccess
+# For Nginx:  add to server {} block
+
+/*
+  # Prevent this page from being embedded in iframes (clickjacking protection)
+  # frame-ancestors in <meta> CSP is ignored by browsers — HTTP header is required.
+  Content-Security-Policy: default-src 'none'; script-src 'sha256-t0+18TJSxSiuPv655v+nwOwixkgm89AZFlJ8QM47glU=' https://cdnjs.cloudflare.com; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-ancestors 'none';
+
+  # Legacy clickjacking header for browsers that don't support CSP frame-ancestors
+  X-Frame-Options: DENY
+
+  # Block MIME-type sniffing (e.g. serving a JS file as HTML)
+  X-Content-Type-Options: nosniff
+
+  # Force HTTPS for 1 year (only enable if you are 100% on HTTPS)
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+  # Don't send referrer when navigating away (belt-and-suspenders with <meta> tag)
+  Referrer-Policy: no-referrer
+
+  # Disable browser features not needed on a payment redirect page
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
