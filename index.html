@@ -5,25 +5,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Processing Payment...</title>
+
+    <!-- SEO: prevent search engine indexing of this redirect page -->
+    <meta name="robots" content="noindex, nofollow">
+
+    <!-- Referrer: do not leak payment details (VPA, amount) to gateway servers -->
+    <meta name="referrer" content="no-referrer">
+
     <!--
-        Content Security Policy: restricts what can load on this page.
-        frame-ancestors 'none' prevents clickjacking (embedding in iframes).
+        Content Security Policy:
+        - unsafe-inline is REMOVED — inline scripts are not permitted.
+        - router.js is whitelisted by its exact SHA-256 hash (SRI).
+        - QRCode CDN is whitelisted by domain; its bytes are verified by the
+          integrity= attribute on the <script> tag below.
+        - frame-ancestors is declared here for completeness but only enforced
+          via the HTTP header in _headers (see that file).
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none';
-                   script-src 'unsafe-inline' https://cdnjs.cloudflare.com;
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none';
+                   script-src 'sha256-FOqQWV/Z90jVz7svMmKSKuWY9iiKTIQy6fvRRe1uDu0='
+                               https://cdnjs.cloudflare.com;
                    style-src 'unsafe-inline';
                    img-src 'self' data:;
                    connect-src 'none';
                    frame-ancestors 'none';">
 
     <!--
-        QRCode library from a reputable CDN with Subresource Integrity (SRI).
-        The 'integrity' hash ensures the browser verifies the exact bytes of the
-        script before executing it — any CDN-side tampering will be rejected.
+        QRCode library loaded from a trusted CDN.
+        The integrity= hash is verified by the browser before execution.
+        If the CDN serves different bytes (tampered/compromised), it is refused.
     -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
-        integrity="sha256-xUHvBjJ4hahBW8qN9gceFBibSFUzbe9PNttUvehITzY=" crossorigin="anonymous">
-        </script>
+            integrity="sha256-xUHvBjJ4hahBW8qN9gceFBibSFUzbe9PNttUvehITzY="
+            crossorigin="anonymous"></script>
+
+    <!--
+        Payment routing logic in an external file, verified by SRI hash.
+        Keeping JS external allows CSP to whitelist it by hash without unsafe-inline.
+    -->
+    <script src="./router.js"
+            integrity="sha256-FOqQWV/Z90jVz7svMmKSKuWY9iiKTIQy6fvRRe1uDu0="
+            crossorigin="anonymous"></script>
+
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -75,13 +98,8 @@
         }
 
         @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-
-            100% {
-                transform: rotate(360deg);
-            }
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -109,118 +127,6 @@
             <p id="error-message">This redirect cannot be processed safely.</p>
         </div>
     </div>
-
-    <script>
-        window.onload = function () {
-
-            // =========================================================
-            // ALLOWLISTS — edit these to match your actual recipients
-            // =========================================================
-
-            // 1. Trusted HTTPS payment gateway hostnames (exact match or subdomain).
-            //    Plain http: is intentionally NOT listed — HTTPS only.
-            const trustedDomains = [
-                'cashfree.com',
-                'api.cashfree.com',
-                'payments.cashfree.com'
-                // Add others as needed: 'razorpay.com', 'stripe.com', etc.
-            ];
-
-            // =========================================================
-            // ROUTING ENGINE
-            // =========================================================
-            const urlParams = new URLSearchParams(window.location.search);
-            // .get() automatically decodes percent-encoding (%40 → @, %20 → space)
-            const targetUrl = urlParams.get('paymentLink');
-
-            const redirectingState = document.getElementById('redirecting-state');
-            const desktopState = document.getElementById('desktop-state');
-            const errorState = document.getElementById('error-state');
-            const errorMessage = document.getElementById('error-message');
-
-            function showError(msg) {
-                redirectingState.classList.add('hidden');
-                desktopState.classList.add('hidden');
-                errorState.classList.remove('hidden');
-                errorMessage.innerText = msg;
-            }
-
-            if (!targetUrl) {
-                showError("Missing payment link parameter.");
-                return;
-            }
-
-            // --- ROUTE 1: UPI NATIVE PROTOCOL ---
-            // MUST be checked BEFORE calling new URL() because browsers throw
-            // a TypeError on non-standard schemes like upi:, tez:, phonepe:.
-            if (/^upi:\/\//i.test(targetUrl)) {
-                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-                // Safely extract UPI query params without the URL constructor
-                const queryStart = targetUrl.indexOf('?');
-                const upiParams = queryStart !== -1
-                    ? new URLSearchParams(targetUrl.slice(queryStart + 1))
-                    : new URLSearchParams();
-
-                const payeeAddress = (upiParams.get('pa') || '').trim().toLowerCase();
-
-                if (!payeeAddress) {
-                    showError("UPI recipient address is missing. Transaction blocked.");
-                    return;
-                }
-
-
-                if (isMobile) {
-                    window.location.href = targetUrl;
-                } else {
-                    // Desktop: render QR code so user can scan with their phone
-                    redirectingState.classList.add('hidden');
-                    desktopState.classList.remove('hidden');
-
-                    // Guard: if CDN script failed to load, tell user instead of crashing
-                    if (typeof QRCode === 'undefined') {
-                        showError("QR library failed to load. Please refresh and try again.");
-                        return;
-                    }
-
-                    new QRCode(document.getElementById("qrcode"), {
-                        text: targetUrl,
-                        width: 200,
-                        height: 200,
-                        correctLevel: QRCode.CorrectLevel.M
-                    });
-                }
-                return;
-            }
-
-            // --- ROUTE 2: STANDARD HTTPS PAYMENT GATEWAYS ---
-            try {
-                const parsedUrl = new URL(targetUrl);
-
-                // Block any non-HTTPS scheme (data:, javascript:, blob:, ftp:, http:, etc.)
-                if (parsedUrl.protocol !== 'https:') {
-                    showError("Only HTTPS payment gateway links are permitted.");
-                    return;
-                }
-
-                const hostname = parsedUrl.hostname.toLowerCase();
-
-                const isDomainTrusted = trustedDomains.some(domain =>
-                    hostname === domain || hostname.endsWith('.' + domain)
-                );
-
-                if (!isDomainTrusted) {
-                    showError("This payment gateway domain is not authorised. Redirect blocked.");
-                    return;
-                }
-
-                window.location.href = targetUrl;
-
-            } catch (e) {
-                showError("The payment link could not be parsed. Please check the URL.");
-            }
-        };
-    </script>
 
 </body>
 
