@@ -1,11 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Processing Payment...</title>
-    <!-- Include QR Code Library safely via CDN -->
-    <script src="https://cloudflare.com"></script>
+    <!--
+        Content Security Policy: restricts what can load on this page.
+        frame-ancestors 'none' prevents clickjacking (embedding in iframes).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none';
+                   script-src 'unsafe-inline' https://cdnjs.cloudflare.com;
+                   style-src 'unsafe-inline';
+                   img-src 'self' data:;
+                   connect-src 'none';
+                   frame-ancestors 'none';">
+
+    <!--
+        QRCode library from a reputable CDN with Subresource Integrity (SRI).
+        The 'integrity' hash ensures the browser verifies the exact bytes of the
+        script before executing it — any CDN-side tampering will be rejected.
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+        integrity="sha256-xUHvBjJ4hahBW8qN9gceFBibSFUzbe9PNttUvehITzY=" crossorigin="anonymous">
+        </script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -17,15 +35,17 @@
             margin: 0;
             color: #333;
         }
+
         .container {
             background: #ffffff;
             padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
             text-align: center;
             max-width: 360px;
             width: 100%;
         }
+
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #0070f3;
@@ -35,6 +55,7 @@
             animation: spin 1s linear infinite;
             margin: 20px auto;
         }
+
         #qrcode {
             margin: 20px auto;
             padding: 10px;
@@ -43,137 +64,164 @@
             border: 1px solid #eaeaea;
             border-radius: 8px;
         }
-        .hidden { display: none !important; }
-        .error { color: #dc2626; font-weight: 500; }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .error {
+            color: #dc2626;
+            font-weight: 500;
+        }
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
+
 <body>
 
-<div class="container">
-    <!-- State 1: Connecting / Redirecting (Mobile or Gateway Redirect) -->
-    <div id="redirecting-state">
-        <div class="loader"></div>
-        <h3>Connecting to Gateway...</h3>
-        <p>Please wait while we route you securely to finish your payment.</p>
+    <div class="container">
+        <!-- State 1: Connecting / Redirecting (Mobile or Gateway Redirect) -->
+        <div id="redirecting-state">
+            <div class="loader"></div>
+            <h3>Connecting to Gateway...</h3>
+            <p>Please wait while we route you securely to finish your payment.</p>
+        </div>
+
+        <!-- State 2: Desktop UPI Fallback (QR Code Shown) -->
+        <div id="desktop-state" class="hidden">
+            <h3>Scan to Pay</h3>
+            <p>Open any UPI app (GPay, PhonePe, Paytm) and scan the QR code below to complete payment.</p>
+            <div id="qrcode"></div>
+        </div>
+
+        <!-- State 3: Errors / Blocks -->
+        <div id="error-state" class="hidden">
+            <h3 class="error">Payment Blocked</h3>
+            <p id="error-message">This redirect cannot be processed safely.</p>
+        </div>
     </div>
 
-    <!-- State 2: Desktop UPI Fallback (QR Code Shown) -->
-    <div id="desktop-state" class="hidden">
-        <h3>Scan to Pay</h3>
-        <p>Open any UPI app (GPay, PhonePe, Paytm) and scan the QR code below to complete payment.</p>
-        <div id="qrcode"></div>
-    </div>
+    <script>
+        window.onload = function () {
 
-    <!-- State 3: Errors / Blocks -->
-    <div id="error-state" class="hidden">
-        <h3 class="error">Security Alert</h3>
-        <p id="error-message">This redirect cannot be processed safely.</p>
-    </div>
-</div>
+            // =========================================================
+            // ALLOWLISTS — edit these to match your actual recipients
+            // =========================================================
 
-<script>
-window.onload = function() {
-    // 1. Trusted Web Domains (Stripe, Cashfree, etc.)
-    const trustedDomains = [
-        'cashfree.com',
-        '://cashfree.com',
-        '://cashfree.com'
-    ];
+            // 1. Trusted HTTPS payment gateway hostnames (exact match or subdomain).
+            //    Plain http: is intentionally NOT listed — HTTPS only.
+            const trustedDomains = [
+                'cashfree.com',
+                'api.cashfree.com',
+                'payments.cashfree.com'
+                // Add others as needed: 'razorpay.com', 'stripe.com', etc.
+            ];
 
-    // 2. Trusted Merchant UPI VPAs (Virtual Payment Addresses)
-    const trustedVPAs = [
-        'yourbusiness@hdfc',
-        'mymerchant@okaxis',
-        'testmerchant@ybl'
-    ];
+            // =========================================================
+            // ROUTING ENGINE
+            // =========================================================
+            const urlParams = new URLSearchParams(window.location.search);
+            // .get() automatically decodes percent-encoding (%40 → @, %20 → space)
+            const targetUrl = urlParams.get('paymentLink');
 
-    // ==========================================
-    // ROUTING ENGINE CORING LOGIC
-    // ==========================================
-    const urlParams = new URLSearchParams(window.location.search);
-    const targetUrl = urlParams.get('paymentLink');
+            const redirectingState = document.getElementById('redirecting-state');
+            const desktopState = document.getElementById('desktop-state');
+            const errorState = document.getElementById('error-state');
+            const errorMessage = document.getElementById('error-message');
 
-    const redirectingState = document.getElementById('redirecting-state');
-    const desktopState = document.getElementById('desktop-state');
-    const errorState = document.getElementById('error-state');
-    const errorMessage = document.getElementById('error-message');
-
-    if (!targetUrl) {
-        showError("Missing query parameter. Please pass a valid link.");
-        return;
-    }
-
-    try {
-        const parsedUrl = new URL(targetUrl);
-        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-        // --- INTERCEPT ROUTE 1: UPI NATIVE PROTOCOL ---
-        if (parsedUrl.protocol === 'upi:') {
-            const upiParams = new URLSearchParams(parsedUrl.search);
-            const payeeAddress = upiParams.get('pa');
-
-            // Strictly cross-examine incoming VPA identity
-            if (!payeeAddress) {
-                showError("Unauthorized UPI recipient address. This transaction has been blocked.");
-                return;
-            }
-
-            if (isMobile) {
-                // Instantly handshake with local mobile phone app registry
-                window.location.href = targetUrl;
-            } else {
-                // Desktop client fallback: Project clean QR asset
+            function showError(msg) {
                 redirectingState.classList.add('hidden');
-                desktopState.classList.remove('hidden');
-
-                new QRCode(document.getElementById("qrcode"), {
-                    text: targetUrl,
-                    width: 200,
-                    height: 200,
-                    correctLevel : QRCode.CorrectLevel.M
-                });
+                desktopState.classList.add('hidden');
+                errorState.classList.remove('hidden');
+                errorMessage.innerText = msg;
             }
-        } 
-        
-        // --- INTERCEPT ROUTE 2: STANDARD CLOUD GATEWAYS (HTTPS) ---
-        else if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
-            const hostname = parsedUrl.hostname.toLowerCase();
 
-            // Interrogate true domain endpoints 
-            const isDomainTrusted = trustedDomains.some(domain => 
-                hostname === domain || hostname.endsWith('.' + domain)
-            );
-
-            if (!isDomainTrusted) {
-                showError("Unauthorized payment gateway domain. Redirection blocked.");
+            if (!targetUrl) {
+                showError("Missing payment link parameter.");
                 return;
             }
 
-            // Web gateways natively adjust seamlessly across all mobile/desktop layouts
-            window.location.href = targetUrl;
-        } 
-        
-        // --- INTERCEPT ROUTE 3: INVALID/REJECTED SCHEMES ---
-        else {
-            showError("Unsupported application payment schema.");
-        }
+            // --- ROUTE 1: UPI NATIVE PROTOCOL ---
+            // MUST be checked BEFORE calling new URL() because browsers throw
+            // a TypeError on non-standard schemes like upi:, tez:, phonepe:.
+            if (/^upi:\/\//i.test(targetUrl)) {
+                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    } catch (e) {
-        showError("The system could not parse the execution link structure securely.");
-    }
+                // Safely extract UPI query params without the URL constructor
+                const queryStart = targetUrl.indexOf('?');
+                const upiParams = queryStart !== -1
+                    ? new URLSearchParams(targetUrl.slice(queryStart + 1))
+                    : new URLSearchParams();
 
-    function showError(msg) {
-        redirectingState.classList.add('hidden');
-        desktopState.classList.add('hidden');
-        errorState.classList.remove('hidden');
-        errorMessage.innerText = msg;
-    }
-};
-</script>
+                const payeeAddress = (upiParams.get('pa') || '').trim().toLowerCase();
+
+                if (!payeeAddress) {
+                    showError("UPI recipient address is missing. Transaction blocked.");
+                    return;
+                }
+
+
+                if (isMobile) {
+                    window.location.href = targetUrl;
+                } else {
+                    // Desktop: render QR code so user can scan with their phone
+                    redirectingState.classList.add('hidden');
+                    desktopState.classList.remove('hidden');
+
+                    // Guard: if CDN script failed to load, tell user instead of crashing
+                    if (typeof QRCode === 'undefined') {
+                        showError("QR library failed to load. Please refresh and try again.");
+                        return;
+                    }
+
+                    new QRCode(document.getElementById("qrcode"), {
+                        text: targetUrl,
+                        width: 200,
+                        height: 200,
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                }
+                return;
+            }
+
+            // --- ROUTE 2: STANDARD HTTPS PAYMENT GATEWAYS ---
+            try {
+                const parsedUrl = new URL(targetUrl);
+
+                // Block any non-HTTPS scheme (data:, javascript:, blob:, ftp:, http:, etc.)
+                if (parsedUrl.protocol !== 'https:') {
+                    showError("Only HTTPS payment gateway links are permitted.");
+                    return;
+                }
+
+                const hostname = parsedUrl.hostname.toLowerCase();
+
+                const isDomainTrusted = trustedDomains.some(domain =>
+                    hostname === domain || hostname.endsWith('.' + domain)
+                );
+
+                if (!isDomainTrusted) {
+                    showError("This payment gateway domain is not authorised. Redirect blocked.");
+                    return;
+                }
+
+                window.location.href = targetUrl;
+
+            } catch (e) {
+                showError("The payment link could not be parsed. Please check the URL.");
+            }
+        };
+    </script>
 
 </body>
+
 </html>
