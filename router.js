@@ -12,9 +12,33 @@ window.onload = function () {
     // =========================================================
     // ROUTING ENGINE
     // =========================================================
-    const urlParams = new URLSearchParams(window.location.search);
-    // .get() automatically decodes percent-encoding (%40 → @, %20 → space)
-    const targetUrl = urlParams.get('paymentLink');
+
+    // WHY NOT URLSearchParams.get()?
+    // URLSearchParams splits on every '&', so an unencoded UPI link like:
+    //   ?paymentLink=upi://pay?pa=x@y&am=875.00&cu=INR
+    // gets truncated to just: upi://pay?pa=x@y
+    // (the browser treats &am= and &cu= as separate top-level params)
+    //
+    // FIX: grab the raw query string and take everything after 'paymentLink='
+    // This is greedy — it captures the full value including any unencoded & chars.
+    // Works correctly for both encoded (?paymentLink=upi%3A%2F%2F...) and
+    // unencoded (?paymentLink=upi://pay?pa=...&am=...) URLs.
+    const rawSearch   = window.location.search.slice(1); // strip leading '?'
+    const plPrefix    = 'paymentLink=';
+    const plIndex     = rawSearch.indexOf(plPrefix);
+    let   targetUrl   = null;
+
+    if (plIndex !== -1) {
+        const rawValue = rawSearch.slice(plIndex + plPrefix.length);
+        try {
+            // If the caller used encodeURIComponent(), decode it back.
+            // If it was passed raw (unencoded), decodeURIComponent is a safe no-op.
+            targetUrl = decodeURIComponent(rawValue);
+        } catch (e) {
+            // Malformed encoding — use the raw string as-is
+            targetUrl = rawValue;
+        }
+    }
 
     const redirectingState = document.getElementById('redirecting-state');
     const desktopState     = document.getElementById('desktop-state');
